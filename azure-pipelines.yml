@@ -1,0 +1,93 @@
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  AWS_DEFAULT_REGION: 'us-east-1' # Update with your region
+  CLUSTER_NAME: 'eks-lab'     # Update with your EKS cluster name
+
+stages:
+  - stage: DeployInfrastructure
+    displayName: Deploy EKS Infrastructure
+    jobs:
+      - job: DeployEKS
+        displayName: Deploy EKS using AWS CDK
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+
+          # Install Node.js (required for AWS CDK)
+          - task: UseNode@1
+            inputs:
+              version: '16.x'
+
+          # Install AWS CDK and dependencies
+          - script: |
+              npm install -g aws-cdk
+              npm install
+            displayName: Install AWS CDK and dependencies
+
+          # Deploy the EKS infrastructure using CDK
+          - script: |
+              cdk bootstrap
+              cdk deploy --require-approval never
+            env:
+              AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+              AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+              AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
+            displayName: Deploy EKS Infrastructure
+
+  - stage: DeployApplication
+    displayName: Deploy Application using Helm
+    dependsOn: DeployInfrastructure
+    jobs:
+      - job: DeployHelm
+        displayName: Deploy Helm Chart to EKS
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+
+          # Install Helm
+          - script: |
+              curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+              chmod 700 get_helm.sh
+              ./get_helm.sh
+              helm version
+            displayName: Install Helm
+
+          # Install Kubernetes CLI (kubectl)
+          - script: |
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              sudo mv kubectl /usr/local/bin/
+              kubectl version --client
+            displayName: Install kubectl
+
+          # Configure kubectl for EKS
+          - script: |
+              aws eks update-kubeconfig --region $(AWS_DEFAULT_REGION) --name $(CLUSTER_NAME)
+            env:
+              AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+              AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+              AWS_DEFAULT_REGION: $(AWS_DEFAULT_REGION)
+            displayName: Configure kubectl for EKS
+
+          # Update Helm values.yaml dynamically (if needed)
+          - script: |
+              IMAGE_REPOSITORY="533267037417.dkr.ecr.us-east-1.amazonaws.com/construction"
+              IMAGE_TAG="v1.1.7"
+              sed -i "s|repository:.*|repository: $IMAGE_REPOSITORY|" helm/app/values.yaml
+              sed -i "s|tag:.*|tag: $IMAGE_TAG|" helm/app/values.yaml
+              echo "Updated values.yaml:"
+              cat helm/app/values.yaml
+            displayName: Update Helm values.yaml
+
+          # Deploy the Helm chart
+          - script: |
+              helm upgrade --install app helm/app \
+                --namespace construction \
+                --create-namespace
+            displayName: Deploy Helm Chart

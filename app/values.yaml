@@ -1,0 +1,30 @@
+replicaCount: 2
+
+image:
+  repository: 533267037417.dkr.ecr.us-east-1.amazonaws.com/construction
+  tag: v1.1.6
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/group.name: "apptest"
+    alb.ingress.kubernetes.io/tags: Environment=dev,Team=devops,ManagedBy=apptest,Site=apptest
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/subnets: subnet-0078e7fc2985ae74d,subnet-086210ec55bfdea5d,subnet-0ab883e73c51ef044
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:533267037417:certificate/483743fd-14bf-4650-b08b-36c637ab32b4
+  hosts:
+    - host: apptest.chebsam.people.aws.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
